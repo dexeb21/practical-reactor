@@ -1,5 +1,7 @@
 import org.junit.jupiter.api.*;
+import reactor.core.publisher.ConnectableFlux;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.FluxSink;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.test.StepVerifier;
@@ -34,11 +36,10 @@ public class c8_Sinks extends SinksBase {
     @Test
     public void single_shooter() {
         //todo: feel free to change code as you need
-        Mono<Boolean> operationCompleted = null;
-        submitOperation(() -> {
-
+        Mono<Boolean> operationCompleted = Mono.create(sink -> submitOperation(() -> {
             doSomeWork(); //don't change this line
-        });
+            sink.success(true);
+        }));
 
         //don't change code below
         StepVerifier.create(operationCompleted.timeout(Duration.ofMillis(5500)))
@@ -55,11 +56,14 @@ public class c8_Sinks extends SinksBase {
     @Test
     public void single_subscriber() {
         //todo: feel free to change code as you need
-        Flux<Integer> measurements = null;
+        Flux<Integer> measurements = Flux.<Integer>create(sink ->
         submitOperation(() -> {
 
             List<Integer> measures_readings = get_measures_readings(); //don't change this line
-        });
+            measures_readings.forEach(sink::next);
+            sink.complete();
+        }))
+        .share();
 
         //don't change code below
         StepVerifier.create(measurements
@@ -75,11 +79,14 @@ public class c8_Sinks extends SinksBase {
     @Test
     public void it_gets_crowded() {
         //todo: feel free to change code as you need
-        Flux<Integer> measurements = null;
+        ConnectableFlux<Integer> measurements = Flux.<Integer>create(sink -> {
         submitOperation(() -> {
 
             List<Integer> measures_readings = get_measures_readings(); //don't change this line
-        });
+            measures_readings.forEach(sink::next);
+            sink.complete();
+        });}).publish();
+        measurements.connect();
 
         //don't change code below
         StepVerifier.create(Flux.merge(measurements
@@ -98,7 +105,7 @@ public class c8_Sinks extends SinksBase {
     @Test
     public void open_24_7() {
         //todo: set autoCancel parameter to prevent sink from closing
-        Sinks.Many<Integer> sink = Sinks.many().multicast().onBackpressureBuffer();
+        Sinks.Many<Integer> sink = Sinks.many().multicast().onBackpressureBuffer(256, false);
         Flux<Integer> flux = sink.asFlux();
 
         //don't change code below
@@ -140,7 +147,7 @@ public class c8_Sinks extends SinksBase {
     @Test
     public void blue_jeans() {
         //todo: enable autoCancel parameter to prevent sink from closing
-        Sinks.Many<Integer> sink = Sinks.many().multicast().onBackpressureBuffer();
+        Sinks.Many<Integer> sink = Sinks.many().replay().all();
         Flux<Integer> flux = sink.asFlux();
 
         //don't change code below
@@ -183,11 +190,18 @@ public class c8_Sinks extends SinksBase {
     @Test
     public void emit_failure() {
         //todo: feel free to change code as you need
-        Sinks.Many<Integer> sink = Sinks.many().replay().all();
+        Sinks.Many<Integer> sink = Sinks.many()
+                .multicast()
+                .onBackpressureBuffer(256, false);
 
+        Object lock = new Object();
         for (int i = 1; i <= 50; i++) {
             int finalI = i;
-            new Thread(() -> sink.tryEmitNext(finalI)).start();
+            new Thread(() -> {
+                synchronized (lock) {
+                    sink.tryEmitNext(finalI);
+                }
+            }).start();
         }
 
         //don't change code below
