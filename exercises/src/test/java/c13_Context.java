@@ -32,7 +32,7 @@ public class c13_Context extends ContextBase {
      */
     public Mono<Message> messageHandler(String payload) {
         //todo: do your changes withing this method
-        return Mono.just(new Message("set correlation_id from context here", payload));
+        return Mono.deferContextual(ctx -> Mono.just(new Message(ctx.get(HTTP_CORRELATION_ID), payload)));
     }
 
     @Test
@@ -55,8 +55,8 @@ public class c13_Context extends ContextBase {
         Mono<Void> repeat = Mono.deferContextual(ctx -> {
             ctx.get(AtomicInteger.class).incrementAndGet();
             return openConnection();
-        });
-        //todo: change this line only
+        })
+        .contextWrite(Context.of(AtomicInteger.class, new AtomicInteger(0)))
         ;
 
         StepVerifier.create(repeat.repeat(4))
@@ -77,11 +77,21 @@ public class c13_Context extends ContextBase {
     @Test
     public void pagination() {
         AtomicInteger pageWithError = new AtomicInteger(); //todo: set this field when error occurs
+        AtomicInteger currentPage = new AtomicInteger(0);
 
         //todo: start from here
-        Flux<Integer> results = getPage(0)
-                .flatMapMany(Page::getResult)
-                .repeat(10)
+        Flux<Integer> results = Flux.deferContextual(ctx -> {
+                    int page = currentPage.getAndIncrement();
+                    return Mono.defer(() -> getPage(page))
+                            .onErrorResume(e -> {
+                                System.out.println("Error occurred on page: " + page + ", error: " + e.getMessage());
+                                pageWithError.set(page);
+                                return Mono.empty();
+                            })
+                            .contextWrite(context -> context.put("page", page + 1))
+                            .flatMapMany(Page::getResult);
+                })
+                .repeat(9)
                 .doOnNext(i -> System.out.println("Received: " + i));
 
 
