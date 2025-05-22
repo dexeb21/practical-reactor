@@ -71,10 +71,9 @@ public class c11_Batching extends BatchingBase {
     public void sum_over_time() {
         Flux<Long> metrics = metrics()
                 .window(Duration.ofSeconds(1))
-                .flatMap(window -> window.collectList()
-                        .map(list -> list.stream().mapToLong(Long::valueOf).sum()))
+                .concatMap(window -> window.reduce(0L, Long::sum))
+                .doOnNext(sum -> System.out.println("sum last second: " + sum))
                 .take(10);
-
         StepVerifier.create(metrics)
                     .expectNext(45L, 165L, 255L, 396L, 465L, 627L, 675L, 858L, 885L, 1089L)
                     .verifyComplete();
